@@ -13,6 +13,7 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -32,6 +33,7 @@ import org.json.JSONObject;
 import android.app.Application;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
@@ -39,7 +41,6 @@ import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.database.Cursor;
 import android.net.Uri;
-import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.provider.Settings.Secure;
 import android.util.Base64;
@@ -51,6 +52,10 @@ public class Util {
     private static final String BASEURL = "https://app.adjust.io";
     private static final String CLIENTSDK = "android1.5";
     private static final String LOGTAG = "AdjustIo";
+
+    private static final String PREFS_NAME = "com.adeven.adjustio";
+    private static final String PREFS_KEY = "mac";
+    private static final byte MAC_LOCALLY_ADMINISTERED_UNICAST = 2;
 
     public static boolean checkPermissions(Application app) {
         boolean result = true;
@@ -263,30 +268,36 @@ public class Util {
         return sanitized;
     }
 
-    private static String getRawMacAddress(Application app) {
-        // android devices should have a wlan address
-        String wlanAddress = loadAddress("wlan0");
-        if (wlanAddress != null) {
-            return wlanAddress;
+    private static String getRawMacAddress(final Application app) {
+        final SharedPreferences prefs = app.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        final String storedMac = prefs.getString(PREFS_KEY, null);
+        if (storedMac != null) {
+            return storedMac;
         }
+        final byte[] newMac = generateMac();
+        final String mac = formatWithColons(newMac);
+        prefs.edit().putString(PREFS_KEY, mac).commit();
+        Log.i(LOGTAG, String.format("generated (and stored) mac address: %s", mac));
+        return mac;
+    }
 
-        // emulators should have an ethernet address
-        String ethAddress = loadAddress("eth0");
-        if (ethAddress != null) {
-            return ethAddress;
-        }
+    private static byte[] generateMac() {
+        final SecureRandom random = new SecureRandom();
+        final byte[] newMac = new byte[6];
+        random.nextBytes(newMac);
+        newMac[0] = MAC_LOCALLY_ADMINISTERED_UNICAST;
+        return newMac;
+    }
 
-        // query the wifi manager (requires the ACCESS_WIFI_STATE permission)
-        try {
-            WifiManager wifiManager = (WifiManager) app.getSystemService(Context.WIFI_SERVICE);
-            String wifiAddress = wifiManager.getConnectionInfo().getMacAddress();
-            if (wifiAddress != null) {
-                return wifiAddress;
+    private static String formatWithColons(final byte[] bytes) {
+        final StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < bytes.length; i++) {
+            sb.append(String.format("%02x", bytes[i]));
+            if (i < (bytes.length - 1)) {
+                sb.append(":");
             }
-        } catch (Exception e) {
         }
-
-        return "";
+        return sb.toString();
     }
 
     // removes spaces and replaces empty string with "unknown"
