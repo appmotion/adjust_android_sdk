@@ -97,6 +97,6 @@ public class RequestTask extends AsyncTask<String, String, String> {
     }
 
     protected void onPostExecute(String responseString) {
-        Log.d(LOGTAG, responseString);
+        Log.d(LOGTAG, String.format("response: %s", responseString));
     }
 }
