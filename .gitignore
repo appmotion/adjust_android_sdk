@@ -16,3 +16,9 @@ gen/
 local.properties
 
 *.remote
+
+# Android Studio
+*.iml
+
+# Gradle
+build
