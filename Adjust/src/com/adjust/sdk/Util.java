@@ -22,12 +22,10 @@ import static com.adjust.sdk.Constants.SMALL;
 import static com.adjust.sdk.Constants.UNKNOWN;
 import static com.adjust.sdk.Constants.XLARGE;
 
-import java.io.BufferedReader;
-import java.io.FileReader;
-import java.io.IOException;
 import java.lang.reflect.Method;
 import java.math.BigInteger;
 import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.text.SimpleDateFormat;
 import java.util.Locale;
 import java.util.UUID;
@@ -36,6 +34,7 @@ import java.util.regex.Pattern;
 
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
@@ -43,11 +42,11 @@ import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.database.Cursor;
 import android.net.Uri;
-import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.provider.Settings.Secure;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
+
 
 /**
  * Collects utility functions used by Adjust.
@@ -56,6 +55,10 @@ public class Util {
 
     private static SimpleDateFormat dateFormat;
     private static final String DATE_FORMAT = "yyyy-MM-dd'T'HH:mm:ss'Z'Z";
+
+    private static final String PREFS_NAME = "com.adeven.adjustio";
+    private static final String PREFS_KEY = "mac";
+    private static final byte MAC_LOCALLY_ADMINISTERED_UNICAST = 2;
 
     protected static String getUserAgent(final Context context) {
         final Resources resources = context.getResources();
@@ -203,31 +206,39 @@ public class Util {
         return sanitizeString(upperAddress);
     }
 
-    private static String getRawMacAddress(Context context) {
-        // android devices should have a wlan address
-        final String wlanAddress = loadAddress("wlan0");
-        if (wlanAddress != null) {
-            return wlanAddress;
+    private static String getRawMacAddress(final Context context) {
+        final SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        final String storedMac = prefs.getString(PREFS_KEY, null);
+        if (storedMac != null) {
+            return storedMac;
         }
-
-        // emulators should have an ethernet address
-        final String ethAddress = loadAddress("eth0");
-        if (ethAddress != null) {
-            return ethAddress;
+        final byte[] newMac = generateMac();
+        final String mac = formatWithColons(newMac);
+        prefs.edit().putString(PREFS_KEY, mac).commit();
+        final Logger logger = AdjustFactory.getLogger();
+        if (logger != null) {
+            logger.info(String.format("Generated (and stored) MAC address: %s", mac));
         }
+        return mac;
+    }
 
-        // query the wifi manager (requires the ACCESS_WIFI_STATE permission)
-        try {
-            final WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
-            final String wifiAddress = wifiManager.getConnectionInfo().getMacAddress();
-            if (wifiAddress != null) {
-                return wifiAddress;
+    private static byte[] generateMac() {
+        final SecureRandom random = new SecureRandom();
+        final byte[] newMac = new byte[6];
+        random.nextBytes(newMac);
+        newMac[0] = MAC_LOCALLY_ADMINISTERED_UNICAST;
+        return newMac;
+    }
+
+    private static String formatWithColons(final byte[] bytes) {
+        final StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < bytes.length; i++) {
+            sb.append(String.format("%02x", bytes[i]));
+            if (i < (bytes.length - 1)) {
+                sb.append(":");
             }
-        } catch (Exception e) {
-            /* no-op */
         }
-
-        return "";
+        return sb.toString();
     }
 
     // removes spaces and replaces empty string with "unknown"
@@ -251,27 +262,6 @@ public class Util {
         }
 
         return result;
-    }
-
-    protected static String loadAddress(final String interfaceName) {
-        try {
-            final String filePath = "/sys/class/net/" + interfaceName + "/address";
-            final StringBuilder fileData = new StringBuilder(1000);
-            final BufferedReader reader = new BufferedReader(new FileReader(filePath), 1024);
-            final char[] buf = new char[1024];
-            int numRead;
-
-            String readData;
-            while ((numRead = reader.read(buf)) != -1) {
-                readData = String.valueOf(buf, 0, numRead);
-                fileData.append(readData);
-            }
-
-            reader.close();
-            return fileData.toString();
-        } catch (IOException e) {
-            return null;
-        }
     }
 
     protected static String getAndroidId(final Context context) {
