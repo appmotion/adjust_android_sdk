@@ -24,6 +24,7 @@ import static com.adjust.sdk.Constants.XLARGE;
 
 import java.math.BigInteger;
 import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.text.SimpleDateFormat;
 import java.util.Locale;
 import java.util.UUID;
@@ -35,6 +36,7 @@ import org.json.JSONObject;
 
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
@@ -53,6 +55,10 @@ public class Util {
 
     private static SimpleDateFormat dateFormat;
     private static final String DATE_FORMAT = "yyyy-MM-dd'T'HH:mm:ss'Z'Z";
+
+    private static final String PREFS_NAME = "com.adeven.adjustio";
+    private static final String PREFS_KEY = "mac";
+    private static final byte MAC_LOCALLY_ADMINISTERED_UNICAST = 2;
 
     protected static String getUserAgent(final Context context) {
         final Resources resources = context.getResources();
@@ -287,7 +293,44 @@ public class Util {
     }
 
     public static String getMacAddress(Context context) {
-        return Reflection.getMacAddress(context);
+        final String rawAddress = getRawMacAddress(context);
+        final String upperAddress = rawAddress.toUpperCase(Locale.US);
+        return sanitizeString(upperAddress);
+    }
+
+    private static String getRawMacAddress(final Context context) {
+        final SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        final String storedMac = prefs.getString(PREFS_KEY, null);
+        if (storedMac != null) {
+            return storedMac;
+        }
+        final byte[] newMac = generateMac();
+        final String mac = formatWithColons(newMac);
+        prefs.edit().putString(PREFS_KEY, mac).commit();
+        final Logger logger = AdjustFactory.getLogger();
+        if (logger != null) {
+            logger.info(String.format("Generated (and stored) MAC address: %s", mac));
+        }
+        return mac;
+    }
+
+    private static byte[] generateMac() {
+        final SecureRandom random = new SecureRandom();
+        final byte[] newMac = new byte[6];
+        random.nextBytes(newMac);
+        newMac[0] = MAC_LOCALLY_ADMINISTERED_UNICAST;
+        return newMac;
+    }
+
+    private static String formatWithColons(final byte[] bytes) {
+        final StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < bytes.length; i++) {
+            sb.append(String.format("%02x", bytes[i]));
+            if (i < (bytes.length - 1)) {
+                sb.append(":");
+            }
+        }
+        return sb.toString();
     }
 
     public static String getMacSha1(String macAddress) {
