@@ -43,7 +43,7 @@ public class Reflection {
     public static String getMacAddress(Context context) {
         try {
             String macSha1 = (String) invokeStaticMethod(
-                    "com.adjust.sdk.plugin.MacAddressUtil",
+                    "com.adjust.sdk.plugin.SyntheticMacAddressUtil",
                     "getMacAddress",
                     new Class[]{Context.class}, context
             );
